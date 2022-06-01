@@ -9,7 +9,7 @@ editor_options:
   chunk_output_type: console
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, fig.showtext=TRUE}
 knitr::opts_chunk$set(echo = T, out.width = '90%',message = F)
 options(knitr.kable.NA = '')
 
@@ -18,8 +18,17 @@ library(tidyverse)
 library(lubridate)
 library(pilot) #remotes::install_github("olihawkins/pilot")
 library(knitr)
+library(showtext)
+showtext::showtext_auto()
+font_add("Helvetica", regular = "fonts/Helvetica.otf")
+
+set_pilot_family("Helvetica")
+
 
 ```
+
+
+
 
 
 ## DNA
@@ -136,7 +145,7 @@ flights %>%
 Tendo em vista que a quantidade total de voos no mês tende a se manter constante, o que poderia explicar que a quantidade de minutos de atraso médio em julho pode ser aproximadamente o dobro do observado em novembro? A explicação mais imediata com base em senso comum é a sazonalidade dos feriados e período de férias. Os meses de junho a agosto marcam as férias de verão dos colégios e universidades, enquanto o mês de dezembro é o período de reuniões familiares para as festas de fim de ano. 
 
 ```{r}
-flights %>%
+plot <- flights %>%
   filter(status == 'delay') %>% 
   with_groups(time, ~stats(., variable = total_delay)) %>%
   mutate(month = format(time, '%m')) %>%
@@ -144,8 +153,9 @@ flights %>%
   geom_boxplot(show.legend = F)+
   pilot::scale_fill_pilot()+
   pilot::theme_pilot()+
-  labs(title = 'Media dos atrasos por mes', y = 'Média', x = 'Mês')
-#   
+  labs( y = 'Média', x = 'Mês')
+  pilot::add_pilot_titles(plot, title = 'Média dos atrasos por mês')
+   
 ```
  
 A conexão exata entre os fatos de termos feriados e períodos festivos e a quantidade total de voos médios por mês não se elevar tanto nesses períodos pode se dar por algumas hipóteses, nem todas testáveis com os dados disponíveis: bagagens maiores nos períodos de feriados prolongados podem atrasar o embarque dos voos; ii) mudança da composição dos destinos: mais viagens para a California e Florida no verão; iii) questões de clima: a neve, os fortes ventos e a visibilidade podem atrapalhar a decolagem, sobretudo no inverno; iv) uma interseção em maior ou menor grau de todos os aspectos anteriores.
@@ -166,7 +176,7 @@ flights %>%
 
 ### Questão 2: Empresas aéreas e atrasos
 
-Inicialmente, observamos que três empresas concentram mais de 10\% cada dos voos atrasados: ExpressJet Airlines, UnitedAir Lines e JetBlue Airways. Juntas, a participação das empresas no total de atrasos é de cerca de 2/3.
+Inicialmente, observamos que três empresas concentram mais de 10\% cada dos voos atrasados: ExpressJet Airlines, UnitedAir Lines e JetBlue Airways.
 
 ```{r}
 Companies = flights %>% 
@@ -176,7 +186,7 @@ Companies = flights %>%
   with_groups(name, ~mutate(., propDelay = count/sum(count), totalFlights = sum(count))) %>% 
   select(name, status, count, propDelay, totalFlights)
 
-Companies %>% 
+plot = Companies %>% 
   filter(status == 'delay') %>% 
   mutate(Razao = totalFlights/sum(totalFlights),
          AboveTen = case_when( Razao >= .10 ~ 'Mais de 10% de atrasos',
@@ -191,10 +201,12 @@ Companies %>%
   geom_text(aes(label = scales::percent(Razao %>%round(2))), hjust = 1)+
   pilot::scale_fill_pilot()+
   pilot::theme_pilot()+
-  labs(title = '% dos voos atrasados',
+  labs(
        x= '% dos voos atrasados',
        y= 'Empresas')+
   theme(legend.position="bottom")
+
+  pilot::add_pilot_titles(plot, title = 'Porcentagem dos voos atrasados')
 ```
 
 No entanto, não surpreendentemente as empresas também detêm os quatro maiores números totais de voos. Em uma operação em larga escala em um produto há décadas realizado de forma constante, regulada e previsível, é de certa forma esperado que a proporção de voos com atraso siga um nível de estabilidade. No entanto, a pergunta original é: elas concentram a maior parte do atraso?
@@ -244,19 +256,73 @@ Eficiencia %>%
 Em um trabalho mais aprofundado seria adequado fazer uso de algoritmos de aproximação de vizinhanças a fim de definir não tão arbitrariamente os pontos de corte. No entanto, uma vez definido o corte, o problema vira uma questão de probabilidade condicional: 
 
 \begin{equation}
-        P(Atraso | GrandeEmpresa) = \frac{P(GrandeEmpresa \cap Atraso)}{P(Atraso)}
+        P(GrandePorte |Atraso ) = \frac{P(GrandePorte \cap Atraso)}{P(Atraso)}
 \end{equation}
 
+e equivalentemente:
+
+\begin{equation}
+        P(PoucoEficiente| Atraso) = \frac{P(PoucoEficiente \cap Atraso )}{P(Atraso)}
+\end{equation}
+
+
+A lógica é bastante simples: dado que um voo atrasou, é mais provável que ele pertença ao grupo das empresas com maior quantidade de voos ou das menos eficientes? Se um voo atrasou, há uma probabilidade de 66,3% desse voo pertencer a uma das quatro maiores, enquanto apenas 24,4% de probabilidade de pertencer às empresas com menor grau de eficiência. Portanto, podemos dizer que as empresas ExpressJet Airlines, UnitedAir Lines e JetBlue Airways concentram os atrasos. 
+
+### Questão 3 
+
+Em primeiro lugar é preciso ressaltar que cerca de 14,7\% dos voos não possuem registros de fabricante. Os dados evidentemente serão limpos, mas não representarão a totalidade dos voos.
+
+Para o primeiro cenário em que estamos interessados em observar toda a base e a discriminação do fabricante, podemos recorrer à tabela da questão anterior.
+
+
 ```{r}
+
+flightsManufacturer <- flights %>%
+            left_join(nycflights13::planes %>% 
+                      select(manufacturer, tailnum)
+                     ) %>% 
+            filter(!is.na(manufacturer))
+
+
+
 
 ```
 
 
 
-e equivalentemente:
+```{r}
+flightsManufacturer %>% 
+  with_groups(manufacturer, ~stats(., variable = distance)) %>% 
+  kable()
 
-\begin{equation}
-        P(PoucoEficiente | Atraso) = \frac{P(Atraso \cap PoucoEficiente )}{P(PoucoEficiente)}
-\end{equation}
+```
 
+O primeiro dado a ser coletado é a grande dispersão entre os dados. Boeing e Airbus, as duas mais importantes produtoras de aviões, têm seus equipamentos em uso em diversos tipos de rotas, o que justifica a alta variância dos dados. O caso é uma descrição clara de um problema que pode ser resolvido com o uso da estatística de Fisher, com o uso da ANOVA.
+
+```{r}
+flightsManufacturer %>%
+  aov(formula = distance ~ manufacturer) %>% 
+  broom::tidy(summary()) %>% 
+  kable()
+```
+
+O teste apresentou p-valor < 5\%, o que nos permite rejeitar a hipótese nula, indicando relação entre o fabricante e a distância.
+
+Prosseguindo para a incorporação da empresa aérea na análise, observamos que o resultado se mantém.
+```{r}
+flightsManufacturer %>%
+  aov(formula = distance ~ manufacturer + carrier) %>% 
+  broom::tidy(summary()) %>% 
+  kable()
+```
+
+Apesar da significância estatística dos dados, o conceito de p-valor por si só é bastante problemático e utilizá-lo como ferramenta de negação de hipóteses sem maior exploração dos dados e compreensão de outras variáveis que possam influenciar na relação pode levar a uma conclusão errônea. Em especial, temos um dataset extremamente desbalanceado, com duas empresas responsáveis pela maioria das aeronaves, o que certamente influencia os resultados. 
+
+# Pensamento estatístico
+
+A inadimplência em queda linear à medida que o limite aumenta para um determinado público é algo esperado se a concessão estiver ajustada. Em boa parte das empresas que trabalham com cartão de crédito, o limite elevado é uma função da estimativa de renda, do comportamento dos gastos e do desempenho/comportamento (behavior) da relação com o cliente. Portanto, um cliente que possui limites elevados certamente possui estimativa de renda elevada nos bureaus de crédito e desempenho compatível no mercado. A relação entre alto limite e baixa inadimplência só é mantida se fatores externos, como taxa de juros e PIB estão constantes.
+
+Um cenário de choque pode ser bastante didático. Imagine que ao invés de uma certa empresa de crédito por erro de sua análise de crédito acaba por conceder limites muito maiores que os compatíveis com a renda dos clientes para uma parte da carteira. Seguirá que o comportamento dos agentes no mercado possivelmente mudará. Se antes o cliente precisaria economizar e liberar limite para a viagem dos sonhos, com a mudança de política o comportamento no mercado será de comprar parceladamente, imaginando que terá como pagar no futuro. Ocorre que o país subitamente enfrenta uma crise econômica em que uma parte da população perde o emprego. Os clientes contemplados com limites elevados podem ter desempenhos iguais ou até piores que outros mais pobres. 
+
+Em cenários de crédito, a regra básica é realizar experimentos sempre que possível, e sempre de forma cautelosa. Se o stakeholder deseja realizar um aumento de limites, pode gerar um número aleatório para cada cliente de sua base. Se, por exemplo, o cliente retirar o número 1, receberá um aumento e caso contrário, não. Como o cartão de crédito não possui tempo de maturação e o comportamento dos agentes pode ser analisado em sequência, em pouquíssimo tempo haverá massa estatisticamente suficiente para realizar comparações por meio de testes estatísticos e avaliar se o trade-off entre inadimplência e receita compensa em comparação com o cenário habitual. Em caso afirmativo, o dígito aleatório pode ser expandido para a 1 a 5, por exemplo, até que se torne a política campeã. 
 
