@@ -205,13 +205,41 @@ OrdenacoesCompanies = Companies %>%
   select(-status) %>%
   rename(`Count Delay` = count) 
 
-OrdenacoesCompanies%>% 
-  arrange(-totalFlights)
+
+Porte <- OrdenacoesCompanies%>% 
+         mutate(
+           Porte = case_when (totalFlights > 40000 ~ 'GrandePorte', 
+                              between(totalFlights, 12000, 40000) ~ 'MedioPorte',
+                              TRUE ~ 'PequenoPorte')
+         )
+  
+  
+  Porte %>% 
+  arrange(-totalFlights) %>% 
+  kable(digits = 3, format.args = list(big.mark = ".",decimal.mark = ","))
+
 ```
 
 Na tabela acima observamos que existe o quarteto já mencionado de grandes empresas com grandes quantidades de voos, seguido por um quinteto de empresas com quantidades de voos médias (American Airlines, Envoy Air, US Airways Inc., Endeavor Air Inc., SouthWest Airlines Co. ) e as demais com poucos voos. Esta será a divisão por porte da empresa. 
 
 Podemos também dividir pela proporção de atrasos: as muito eficientes, com menos de 35\% dos voos, as medianas que estão entre 35,1\% até 45\% de voos com atraso e as demais, que tem valores muito próximos ou maiores que a metade das operações em atraso.
+
+
+```{r}
+
+Eficiencia <- OrdenacoesCompanies%>% 
+         mutate(
+           Eficiencia = case_when (
+                            propDelay <.35 ~ 'MuitoEficientes', 
+                            between(propDelay, .35, .45) ~ 'Eficientes',
+                            TRUE ~ 'PoucoEficientes'
+                                  )
+         )
+
+Eficiencia %>% 
+  arrange(propDelay) %>% 
+  kable(digits = 3,format.args = list(big.mark = ".",decimal.mark = ","))
+```
 
 Em um trabalho mais aprofundado seria adequado fazer uso de algoritmos de aproximação de vizinhanças a fim de definir não tão arbitrariamente os pontos de corte. No entanto, uma vez definido o corte, o problema vira uma questão de probabilidade condicional: 
 
@@ -219,9 +247,16 @@ Em um trabalho mais aprofundado seria adequado fazer uso de algoritmos de aproxi
         P(Atraso | GrandeEmpresa) = \frac{P(GrandeEmpresa \cap Atraso)}{P(Atraso)}
 \end{equation}
 
-
-
 ```{r}
-OrdenacoesCompanies %>% 
-  arrange(propDelay)
+
 ```
+
+
+
+e equivalentemente:
+
+\begin{equation}
+        P(PoucoEficiente | Atraso) = \frac{P(Atraso \cap PoucoEficiente )}{P(PoucoEficiente)}
+\end{equation}
+
+
