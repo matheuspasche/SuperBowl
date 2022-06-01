@@ -5,6 +5,7 @@ library(lubridate)
 
 flights <- nycflights13::flights %>% 
            mutate(yearmon = ym(paste0(year, month)),
+                  time = as_date(time_hour),
                   total_delay = arr_delay + dep_delay,
                   status = case_when(total_delay > 0 ~ 'delay',
                                      total_delay <0~ 'early',
@@ -45,50 +46,35 @@ flights %>%
 
 
 
-teste <- flights %>% 
-  with_groups(c(yearmon, dest), ~summarise(.,Count = n()))  %>% 
-  with_groups(c(yearmon), ~filter(slice_max(., Count, n = 3)))  %>% 
-  left_join(airports, c("dest"="faa")) 
+
+stats <- function(.data, variable) {
+  .data %>%
+    summarise(
+      count = n(),
+      mean = mean({{variable}}),
+      median = median({{variable}}),
+      sd = sd({{variable}}),
+      var = var({{variable}}),
+      'p.01'=quantile({{variable}}, probs = .1),
+      'p.025'=quantile({{variable}}, probs = .25),
+      'p.09'=quantile({{variable}}, probs = .9),
+      'p.99'=quantile({{variable}}, probs = .99)
+    )
   
-  map_data("state")
+}
 
-map_data("state") %>% 
-ggplot() +
-  geom_polygon(mapping=aes(x=long,y=lat),color="white",fill="grey")+
-  geom_point(data=teste, mapping = aes(x = lon, y = lat, size = dest, col = dest), 
-             position = "jitter",size=2.5) + labs(color = "Average Delay")+
-  facet_wrap(~yearmon)
+bymonth = flights %>% 
+  filter(!is.na(air_time), status == 'delay') %>% 
+  mutate(month_year = floor_date(time, 'month'))
 
-
-
-
-flights2 <- mutate(flights, tot_delay = arr_delay + dep_delay)
-flights2 <- flights2 %>% group_by(dest) %>% 
-  summarise(avg_delay = mean(tot_delay, na.rm = T)) %>% 
-  left_join(airports, c("dest"="faa")) %>%
-  arrange(desc(avg_delay))
-states = map_data("state")
-
-g <- ggplot(data=states)
-g2 <- g + geom_polygon(mapping=aes(x=long,y=lat,group=group),color="white",fill="grey")
-g2 <- g2 + ggtitle("Map of the USA minus Alaska")
-g2
-
-flights3 <- filter(flights2, lon > -140)
-g3 <- g2 + geom_point(data=flights3, mapping = aes(x = lon, y = lat, color = avg_delay), 
-                      position = "jitter",size=2.5) + labs(color = "Average Delay") +
-  scale_colour_gradient(low = "white",high = "dark red")
-g3
+bymonth%>% 
+  with_groups(month_year, ~stats(., variable = total_delay)) %>% 
+  knitr::kable(caption = 'Registros de estatísticas descriticas por mês', digits=1)
 
 
-flights3 <- filter(flights3, !is.na(avg_delay))
-worst_flights <- head(flights3,5)
-best_flights <- tail(flights3,5)
-
-g4 <- g3 + geom_text(data=worst_flights, mapping=aes(x = lon, y = lat, label = dest), color="red", nudge_y = -0.5) 
-
-g4 + geom_text(data=best_flights, mapping=aes(x = lon, y = lat , label = dest), angle=20,nudge_y=-0.5)
+bymonth %>% 
+  ggplot(aes(x= month_year, y = total_delay, col= carrier))+
+  geom_point()
   
-
-
-
+  
+  

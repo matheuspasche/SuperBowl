@@ -5,13 +5,18 @@ date: "29/05/2022"
 output:
   pdf_document:
     latex_engine: xelatex
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = T)
+knitr::opts_chunk$set(echo = T, out.width = '90%')
 library(testthat)
 library(tidyverse)
 library(lubridate)
+library(pilot) #remotes::install_github("olihawkins/pilot")
+library(knitr)
+
 ```
 
 
@@ -61,6 +66,7 @@ test_that("Translate dna", {
 flights <- nycflights13::flights %>% 
   mutate(total_delay = arr_delay + dep_delay, month_year = floor_date(time_hour, 'month'),
          time = as_date(time_hour),
+         month_year = ym(paste0(year, month)),
          status = case_when(total_delay > 0 ~ 'delay', total_delay <0~ 'early', total_delay ==0 ~'in time'))
 
 flights %>%
@@ -71,6 +77,18 @@ flights %>%
 ```
 
 ### Questão 1:
+
+A quantidade total de voos, que inclui atrasados e não atrasados, não variou consideravelmente ao longo dos meses. 
+
+```{r}
+
+flights %>% 
+  filter(!is.na(status)) %>% 
+  janitor::tabyl(month, status) %>% 
+  janitor::adorn_totals(where = 'col') %>% 
+  kable(caption = "Quantidade de voos por mês e status",
+        format.args = list(big.mark = ".",decimal.mark = ","))
+```
 
 Tendo em vista que estamos interessados em analisar o atraso, foram retirados os voos com saldo total (embarque + desembarque) negativo. Abaixo podemos identificar os primeiros registros do atraso médio, mediano e estatísticas percentuais para cada dia do ano. Evidentemente não é prático exibir todos os 365 dias. 
 
@@ -91,27 +109,25 @@ stats <- function(.data, variable) {
                         
 }
 
-
-lateDay = flights %>%
+flights %>%
     filter(!is.na(air_time), status == 'delay') %>% 
-    with_groups(time, ~stats(., variable = total_delay)) 
-
-lateDay%>%
+    with_groups(time, ~stats(., variable = total_delay))%>%
     head() %>% 
     knitr::kable(caption = 'Registros de estatísticas descriticas por dia', digits=1)
     
 ```
 
-Para fins de análise anual, agregaremos os dados diários médios por mês. Inicialmente podemos verificar que os períodos de maior atraso mediano são junho-julho, períodos de férias escolares e verão, e dezembro, marcado pelas festas de natal e ano novo. 
+Para fins de análise do desempenho e tendo em vista que em um único dia há registro de vários voos, agregaremos os dados em meses. Inicialmente podemos verificar que os períodos de maior atraso mediano são junho-julho e dezembro.
 
 ```{r}
-lateMonth = flights %>% 
+flights %>% 
   filter(!is.na(air_time), status == 'delay') %>% 
-  mutate(month_year = floor_date(time, 'month')) %>% 
-  with_groups(month_year, ~stats(., variable = total_delay)) %>% 
+  with_groups(month, ~stats(., variable = total_delay)) %>% 
   knitr::kable(caption = 'Registros de estatísticas descriticas por mês', digits=1)
 
 ```
+
+Tendo em vista que a quantidade total de voos no mês tende a se manter constante, o que poderia explicar que a quantidade de minutos de atraso médio em julho pode ser aproximadamente o dobro do observado em novembro? A explicação mais imediata com base em senso comum é a sazonalidade dos feriados e período de férias. Os meses de junho a agosto marcam as férias de verão dos colégios e universidades, enquanto o mês de dezembro é o período de reuniões familiares para as festas de fim de ano. 
 
 ```{r}
 lateDay %>%
@@ -127,11 +143,16 @@ lateDay %>%
 O maior atraso nesses meses pode ser explicado em partes pela maior quantidade de voos. Uma vez que estamos observando apenas os voos com atraso, é evidente que um número maior de voos tende a causar um número maior de atrasos, seja porque estamos realizando o experimento o evento mais vezes, seja por um aumento das atribuições das equipes nos meses de pico.
 
 ```{r}
-lateDay %>% 
+flights %>% 
+  filter(!is.na(air_time), status == 'delay') %>% 
+  group_by(month, day) %>% 
+  summarise(mean = mean(total_delay), count = n()) %>% 
   ggplot(aes(x = count, y = mean))+
-  geom_point()+
-  geom_smooth(method="lm", formula= (y ~ x), se=FALSE)+
-  pilot::theme_pilot()
+  geom_point(col = pilot::pilot_color(2))+
+  geom_smooth(method="lm", formula= (y ~ x), se=FALSE, col = pilot::pilot_color(1) )+
+  pilot::theme_pilot()+
+  labs(title = 'Media dos atrasos por mes', y = 'Média dos minutos', x = 'Mes')
+
   
 
 ```
