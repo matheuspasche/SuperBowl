@@ -10,7 +10,9 @@ editor_options:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = T, out.width = '90%')
+knitr::opts_chunk$set(echo = T, out.width = '90%',message = F)
+options(knitr.kable.NA = '')
+
 library(testthat)
 library(tidyverse)
 library(lubridate)
@@ -67,13 +69,18 @@ flights <- nycflights13::flights %>%
   mutate(total_delay = arr_delay + dep_delay, month_year = floor_date(time_hour, 'month'),
          time = as_date(time_hour),
          month_year = ym(paste0(year, month)),
-         status = case_when(total_delay > 0 ~ 'delay', total_delay <0~ 'early', total_delay ==0 ~'in time'))
+         status = case_when(total_delay > 0 ~ 'delay',
+                            total_delay <0~ 'early',
+                            total_delay ==0 ~'in time'))
 
 flights %>%
     summarise(across(everything(), ~ sum(is.na(.)))) %>% 
-    pivot_longer(cols = everything(), names_to = 'Variable',values_to = 'NA Count') %>% 
+    pivot_longer(cols = everything(),
+                 names_to = 'Variable',
+                 values_to = 'NA Count') %>% 
     knitr::kable(caption = 'Contagem de NAs')
 
+flights <- flights %>% filter(!is.na(status))
 ```
 
 ### Questão 1:
@@ -83,7 +90,6 @@ A quantidade total de voos, que inclui atrasados e não atrasados, não variou c
 ```{r}
 
 flights %>% 
-  filter(!is.na(status)) %>% 
   janitor::tabyl(month, status) %>% 
   janitor::adorn_totals(where = 'col') %>% 
   kable(caption = "Quantidade de voos por mês e status",
@@ -110,7 +116,7 @@ stats <- function(.data, variable) {
 }
 
 flights %>%
-    filter(!is.na(air_time), status == 'delay') %>% 
+    filter(status == 'delay') %>% 
     with_groups(time, ~stats(., variable = total_delay))%>%
     head() %>% 
     knitr::kable(caption = 'Registros de estatísticas descriticas por dia', digits=1)
@@ -130,67 +136,92 @@ flights %>%
 Tendo em vista que a quantidade total de voos no mês tende a se manter constante, o que poderia explicar que a quantidade de minutos de atraso médio em julho pode ser aproximadamente o dobro do observado em novembro? A explicação mais imediata com base em senso comum é a sazonalidade dos feriados e período de férias. Os meses de junho a agosto marcam as férias de verão dos colégios e universidades, enquanto o mês de dezembro é o período de reuniões familiares para as festas de fim de ano. 
 
 ```{r}
-lateDay %>%
-  mutate(month = format(time, '%m-%y')) %>% 
+flights %>%
+  filter(status == 'delay') %>% 
+  with_groups(time, ~stats(., variable = total_delay)) %>%
+  mutate(month = format(time, '%m')) %>%
   ggplot(aes(x = month, y= mean, fill = month))+
   geom_boxplot(show.legend = F)+
   pilot::scale_fill_pilot()+
   pilot::theme_pilot()+
-  labs(title = 'Media dos atrasos por mes', y = 'Media', x = 'Mes')
-  
+  labs(title = 'Media dos atrasos por mes', y = 'Média', x = 'Mês')
+#   
 ```
  
-O maior atraso nesses meses pode ser explicado em partes pela maior quantidade de voos. Uma vez que estamos observando apenas os voos com atraso, é evidente que um número maior de voos tende a causar um número maior de atrasos, seja porque estamos realizando o experimento o evento mais vezes, seja por um aumento das atribuições das equipes nos meses de pico.
+A conexão exata entre os fatos de termos feriados e períodos festivos e a quantidade total de voos médios por mês não se elevar tanto nesses períodos pode se dar por algumas hipóteses, nem todas testáveis com os dados disponíveis: bagagens maiores nos períodos de feriados prolongados podem atrasar o embarque dos voos; ii) mudança da composição dos destinos: mais viagens para a California e Florida no verão; iii) questões de clima: a neve, os fortes ventos e a visibilidade podem atrapalhar a decolagem, sobretudo no inverno; iv) uma interseção em maior ou menor grau de todos os aspectos anteriores.
+
+Como um dos critérios de avaliação é a análise direta ao ponto, destacarei um fato que corrobora a hipótese ii: se coletarmos os destinos ao longo dos meses, veremos que de fato há sazonalidade. A tabela abaixo mostra os 5 principais destinos dos voos partindo de Nova Iorque por mês. Há regularidade na relação com Atlanta e Chicago, provavelmente por relações financeiras, mas observe que os aeroportos de Los Angeles e São Francisco aparecem mais frequentemente no top 5 em períodos de férias.
 
 ```{r}
-flights %>% 
-  filter(!is.na(air_time), status == 'delay') %>% 
-  group_by(month, day) %>% 
-  summarise(mean = mean(total_delay), count = n()) %>% 
-  ggplot(aes(x = count, y = mean))+
-  geom_point(col = pilot::pilot_color(2))+
-  geom_smooth(method="lm", formula= (y ~ x), se=FALSE, col = pilot::pilot_color(1) )+
-  pilot::theme_pilot()+
-  labs(title = 'Media dos atrasos por mes', y = 'Média dos minutos', x = 'Mes')
-
-  
-
+flights %>%
+  with_groups(c(dest, month),~summarise(.,count = n())) %>%
+  with_groups(c(month),~slice_max(.,count, n = 5) %>% 
+                        mutate(Top5 = row_number())) %>%
+  left_join(nycflights13::airports, by = c("dest" = "faa")) %>% 
+  select(name, Top5, month) %>%
+  pivot_wider(names_from = month, values_from = Top5) %>% 
+  kable(caption = 'Principais aeroportos de destino por mês')
 ```
 
-### Questão 2: 
 
-Ao observar 
+### Questão 2: Empresas aéreas e atrasos
+
+Inicialmente, observamos que três empresas concentram mais de 10\% cada dos voos atrasados: ExpressJet Airlines, UnitedAir Lines e JetBlue Airways. Juntas, a participação das empresas no total de atrasos é de cerca de 2/3.
 
 ```{r}
-airlines <- nycflights13::airlines
-
-flights <- flights %>% left_join(airlines)
-
-
 Companies = flights %>% 
   filter(!is.na(air_time)) %>% 
-  with_groups(c(name,status), ~summarise(.,count = n())) %>%
-  with_groups(name, ~mutate(., Razao = count/sum(count)))
-  
+  with_groups(c(carrier ,status), ~summarise(.,count = n())) %>%
+  left_join(nycflights13::airlines) %>% 
+  with_groups(name, ~mutate(., propDelay = count/sum(count), totalFlights = sum(count))) %>% 
+  select(name, status, count, propDelay, totalFlights)
+
 Companies %>% 
-  mutate(Abovefifty = case_when (Razao >= .5 ~ 'Mais de 50% de atrasos',TRUE~ 'Menos de 50% de atrasos')) %>% 
   filter(status == 'delay') %>% 
-  ggplot(aes(x = Razao, y = reorder(name, Razao), fill = Abovefifty))+
+  mutate(Razao = totalFlights/sum(totalFlights),
+         AboveTen = case_when( Razao >= .10 ~ 'Mais de 10% de atrasos',
+                                   TRUE~ 'Menos de 10% de atrasos')
+                                  ) %>% 
+  ggplot(aes(
+             x = Razao,
+             y = reorder(name, Razao),
+             fill = AboveTen)
+         )+
   geom_bar(stat = 'identity')+
-  geom_text(aes(label = scales::percent(Razao)), hjust = 1)+
+  geom_text(aes(label = scales::percent(Razao %>%round(2))), hjust = 1)+
   pilot::scale_fill_pilot()+
   pilot::theme_pilot()+
-  labs(title = 'Empresas com mais de 50% dos voos atrasados', x= '% dos voos atrasados', y= 'Empresas')
+  labs(title = '% dos voos atrasados',
+       x= '% dos voos atrasados',
+       y= 'Empresas')+
+  theme(legend.position="bottom")
 ```
+
+No entanto, não surpreendentemente as empresas também detêm os quatro maiores números totais de voos. Em uma operação em larga escala em um produto há décadas realizado de forma constante, regulada e previsível, é de certa forma esperado que a proporção de voos com atraso siga um nível de estabilidade. No entanto, a pergunta original é: elas concentram a maior parte do atraso?
+
+```{r}
+OrdenacoesCompanies = Companies %>% 
+  filter(status =='delay') %>% 
+  select(-status) %>%
+  rename(`Count Delay` = count) 
+
+OrdenacoesCompanies%>% 
+  arrange(-totalFlights)
+```
+
+Na tabela acima observamos que existe o quarteto já mencionado de grandes empresas com grandes quantidades de voos, seguido por um quinteto de empresas com quantidades de voos médias (American Airlines, Envoy Air, US Airways Inc., Endeavor Air Inc., SouthWest Airlines Co. ) e as demais com poucos voos. Esta será a divisão por porte da empresa. 
+
+Podemos também dividir pela proporção de atrasos: as muito eficientes, com menos de 35\% dos voos, as medianas que estão entre 35,1\% até 45\% de voos com atraso e as demais, que tem valores muito próximos ou maiores que a metade das operações em atraso.
+
+Em um trabalho mais aprofundado seria adequado fazer uso de algoritmos de aproximação de vizinhanças a fim de definir não tão arbitrariamente os pontos de corte. No entanto, uma vez definido o corte, o problema vira uma questão de probabilidade condicional: 
+
+\begin{equation}
+        P(Atraso | GrandeEmpresa) = \frac{P(GrandeEmpresa \cap Atraso)}{P(Atraso)}
+\end{equation}
+
 
 
 ```{r}
-Companies %>% 
-  filter(status == 'delay') %>% 
-  mutate(Razao = count/sum(count),
-         Abovefifteen = case_when (Razao >= .15 ~ 'Mais de 15% de atrasos',TRUE~ 'Menos de 15% de atrasos')) %>% 
-  ggplot(aes(x = Razao, y = reorder(name, Razao), fill = Abovefifteen))+
-  geom_bar(stat = 'identity')+
-  pilot::scale_fill_pilot()
+OrdenacoesCompanies %>% 
+  arrange(propDelay)
 ```
-
